@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Forecast Uncertainty Visualizations</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .uncertainty-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .viz-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .viz-section:hover {
+            border-color: #667eea;
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .viz-section h2 {
+            color: #34495e;
+            margin-bottom: 15px;
+            font-size: 1.4em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .viz-section p {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 20px;
+        }
+        
+        .d3-chart {
+            width: 100%;
+            height: 400px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        select, button {
+            padding: 10px 15px;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            background: white;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        select:hover, button:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+        
+        .model-info {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+        }
+        
+        .model-info h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .model-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .model-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌦️ Weather Forecast Uncertainty Visualizations</h1>
+        
+        <div class="uncertainty-grid">
+            <!-- Multi-Model Ensemble -->
+            <div class="viz-section">
+                <h2>Multi-Model Ensemble Uncertainty</h2>
+                <p>Compares different weather models (GFS, ECMWF, NAM, etc.) showing inter-model variability</p>
+                <div class="controls">
+                    <select id="ensemble-variable">
+                        <option value="temperature">Temperature (°C)</option>
+                        <option value="precipitation">Precipitation (mm)</option>
+                        <option value="wind">Wind Speed (m/s)</option>
+                        <option value="humidity">Relative Humidity (%)</option>
+                    </select>
+                    <button onclick="updateEnsemble()">Update</button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="ensembleChart"></canvas>
+                </div>
+                <div class="legend" id="ensemble-legend"></div>
+            </div>
+
+            <!-- Lead Time Uncertainty -->
+            <div class="viz-section">
+                <h2>Lead Time Uncertainty</h2>
+                <p>Shows how forecast uncertainty increases with lead time (forecast horizon)</p>
+                <div class="controls">
+                    <select id="leadtime-variable">
+                        <option value="temperature">Temperature (°C)</option>
+                        <option value="precipitation">Precipitation (mm)</option>
+                        <option value="wind">Wind Speed (m/s)</option>
+                        <option value="humidity">Relative Humidity (%)</option>
+                    </select>
+                    <button onclick="updateLeadTime()">Update</button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="leadTimeChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Percentile Fan Chart -->
+            <div class="viz-section">
+                <h2>Percentile Fan Chart</h2>
+                <p>Shows forecast uncertainty using percentile bands (10th, 25th, 75th, 90th percentiles)</p>
+                <div class="controls">
+                    <select id="fan-variable">
+                        <option value="temperature">Temperature (°C)</option>
+                        <option value="precipitation">Precipitation (mm)</option>
+                        <option value="wind">Wind Speed (m/s)</option>
+                        <option value="humidity">Relative Humidity (%)</option>
+                    </select>
+                    <button onclick="updateFanChart()">Update</button>
+                </div>
+                <div class="d3-chart" id="fanChart"></div>
+            </div>
+
+            <!-- Box Plot Uncertainty -->
+            <div class="viz-section">
+                <h2>Box Plot Uncertainty by Lead Time</h2>
+                <p>Distribution statistics (median, quartiles, outliers) for different forecast horizons</p>
+                <div class="controls">
+                    <select id="box-variable">
+                        <option value="temperature">Temperature (°C)</option>
+                        <option value="precipitation">Precipitation (mm)</option>
+                        <option value="wind">Wind Speed (m/s)</option>
+                        <option value="humidity">Relative Humidity (%)</option>
+                    </select>
+                    <button onclick="updateBoxPlot()">Update</button>
+                </div>
+                <div class="d3-chart" id="boxPlot"></div>
+            </div>
+
+            <!-- Monte Carlo Simulation -->
+            <div class="viz-section">
+                <h2>Monte Carlo Ensemble</h2>
+                <p>Multiple realizations showing probabilistic forecasts from perturbed initial conditions</p>
+                <div class="controls">
+                    <select id="monte-variable">
+                        <option value="temperature">Temperature (°C)</option>
+                        <option value="precipitation">Precipitation (mm)</option>
+                        <option value="wind">Wind Speed (m/s)</option>
+                        <option value="humidity">Relative Humidity (%)</option>
+                    </select>
+                    <select id="monte-members">
+                        <option value="20">20 Members</option>
+                        <option value="50">50 Members</option>
+                        <option value="100">100 Members</option>
+                    </select>
+                    <button onclick="updateMonteCarlo()">Generate New</button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="monteCarloChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Probability Density -->
+            <div class="viz-section">
+                <h2>Probability Density Functions</h2>
+                <p>Shows forecast probability distributions at different lead times</p>
+                <div class="controls">
+                    <select id="pdf-variable">
+                        <option value="temperature">Temperature (°C)</option>
+                        <option value="precipitation">Precipitation (mm)</option>
+                        <option value="wind">Wind Speed (m/s)</option>
+                        <option value="humidity">Relative Humidity (%)</option>
+                    </select>
+                    <button onclick="updatePDF()">Update</button>
+                </div>
+                <div class="d3-chart" id="pdfChart"></div>
+            </div>
+        </div>
+
+        <div class="model-info">
+            <h3>Weather Models & Uncertainty Types</h3>
+            <div class="model-grid">
+                <div class="model-card">
+                    <h4>Global Models</h4>
+                    <ul>
+                        <li>GFS (NOAA)</li>
+                        <li>ECMWF (IFS)</li>
+                        <li>CMC (GEM)</li>
+                        <li>UKMO (UM)</li>
+                        <li>JMA (GSM)</li>
+                    </ul>
+                </div>
+                <div class="model-card">
+                    <h4>Regional Models</h4>
+                    <ul>
+                        <li>NAM (NOAA)</li>
+                        <li>HRRR (NOAA)</li>
+                        <li>WRF</li>
+                        <li>COSMO</li>
+                        <li>HIRLAM</li>
+                    </ul>
+                </div>
+                <div class="model-card">
+                    <h4>Uncertainty Sources</h4>
+                    <ul>
+                        <li>Initial Condition Uncertainty</li>
+                        <li>Model Physics Uncertainty</li>
+                        <li>Boundary Condition Uncertainty</li>
+                        <li>Parameter Uncertainty</li>
+                        <li>Chaos/Butterfly Effect</li>
+                    </ul>
+                </div>
+                <div class="model-card">
+                    <h4>Ensemble Types</h4>
+                    <ul>
+                        <li>Perturbed Initial Conditions</li>
+                        <li>Multi-Physics</li>
+                        <li>Multi-Model</li>
+                        <li>Stochastic Physics</li>
+                        <li>Lagged Ensemble</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // Weather models and their characteristics
+        const weatherModels = {
+            'GFS': { color: '#FF6B6B', bias: 0, spread: 1.0 },
+            'ECMWF': { color: '#4ECDC4', bias: 0.2, spread: 0.8 },
+            'NAM': { color: '#45B7D1', bias: -0.1, spread: 1.2 },
+            'CMC': { color: '#96CEB4', bias: 0.1, spread: 0.9 },
+            'UKMO': { color: '#FFEAA7', bias: -0.05, spread: 1.1 },
+            'JMA': { color: '#DDA0DD', bias: 0.15, spread: 0.95 }
+        };
+
+        // Variable characteristics
+        const variables = {
+            temperature: { unit: '°C', baseValue: 15, range: 20, noise: 2 },
+            precipitation: { unit: 'mm', baseValue: 2, range: 8, noise: 1.5 },
+            wind: { unit: 'm/s', baseValue: 8, range: 12, noise: 1.8 },
+            humidity: { unit: '%', baseValue: 65, range: 30, noise: 5 }
+        };
+
+        // Generate synthetic data
+        function generateWeatherData(variable, hours = 168, models = Object.keys(weatherModels)) {
+            const varInfo = variables[variable];
+            const data = {};
+            
+            models.forEach(model => {
+                const modelInfo = weatherModels[model];
+                data[model] = [];
+                
+                for (let i = 0; i < hours; i++) {
+                    // Add trend, seasonal variation, and noise
+                    const trend = Math.sin(i * 0.1) * varInfo.range * 0.3;
+                    const seasonal = Math.cos(i * 0.02) * varInfo.range * 0.2;
+                    const noise = (Math.random() - 0.5) * varInfo.noise * (1 + i * 0.01); // Increasing uncertainty
+                    const modelBias = modelInfo.bias * varInfo.range * 0.1;
+                    const modelSpread = modelInfo.spread;
+                    
+                    const value = varInfo.baseValue + trend + seasonal + (noise * modelSpread) + modelBias;
+                    data[model].push(Math.max(0, value)); // Ensure non-negative for precip/humidity
+                }
+            });
+            
+            return data;
+        }
+
+        // Generate ensemble data with multiple members
+        function generateEnsembleData(variable, hours = 168, members = 50) {
+            const varInfo = variables[variable];
+            const ensemble = [];
+            
+            for (let member = 0; member < members; member++) {
+                const memberData = [];
+                const memberBias = (Math.random() - 0.5) * varInfo.range * 0.2;
+                
+                for (let i = 0; i < hours; i++) {
+                    const trend = Math.sin(i * 0.1) * varInfo.range * 0.3;
+                    const seasonal = Math.cos(i * 0.02) * varInfo.range * 0.2;
+                    const noise = (Math.random() - 0.5) * varInfo.noise * (1 + i * 0.02);
+                    const chaos = (Math.random() - 0.5) * varInfo.noise * 0.5 * Math.sqrt(i);
+                    
+                    const value = varInfo.baseValue + trend + seasonal + noise + chaos + memberBias;
+                    memberData.push(Math.max(0, value));
+                }
+                ensemble.push(memberData);
+            }
+            
+            return ensemble;
+        }
+
+        // Initialize charts
+        let ensembleChart, leadTimeChart, monteCarloChart;
+
+        function initializeCharts() {
+            // Multi-Model Ensemble Chart
+            const ensembleCtx = document.getElementById('ensembleChart').getContext('2d');
+            ensembleChart = new Chart(ensembleCtx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    scales: { 
+                        x: { title: { display: true, text: 'Hours from Now' }},
+                        y: { title: { display: true, text: 'Value' }}
+                    },
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) { return `Hour ${context[0].label}`; }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Lead Time Uncertainty Chart  
+            const leadTimeCtx = document.getElementById('leadTimeChart').getContext('2d');
+            leadTimeChart = new Chart(leadTimeCtx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { title: { display: true, text: 'Forecast Lead Time (hours)' }},
+                        y: { title: { display: true, text: 'Forecast Spread (Uncertainty)' }}
+                    },
+                    plugins: { legend: { position: 'bottom' }}
+                }
+            });
+
+            // Monte Carlo Chart
+            const monteCarloCtx = document.getElementById('monteCarloChart').getContext('2d');
+            monteCarloChart = new Chart(monteCarloCtx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false },
+                    scales: { 
+                        x: { title: { display: true, text: 'Hours from Now' }},
+                        y: { title: { display: true, text: 'Value' }}
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    },
+                    elements: { point: { radius: 0 }}
+                }
+            });
+
+            updateAllCharts();
+        }
+
+        function updateEnsemble() {
+            const variable = document.getElementById('ensemble-variable').value;
+            const data = generateWeatherData(variable);
+            const varInfo = variables[variable];
+            
+            const datasets = Object.keys(data).map(model => ({
+                label: model,
+                data: data[model].slice(0, 72), // 3 days
+                borderColor: weatherModels[model].color,
+                backgroundColor: weatherModels[model].color + '20',
+                borderWidth: 2,
+                tension: 0.4,
+                fill: false
+            }));
+
+            ensembleChart.data.labels = Array.from({length: 72}, (_, i) => i);
+            ensembleChart.data.datasets = datasets;
+            ensembleChart.options.scales.y.title.text = `${variable.charAt(0).toUpperCase() + variable.slice(1)} (${varInfo.unit})`;
+            ensembleChart.update();
+
+            // Update legend
+            const legend = document.getElementById('ensemble-legend');
+            legend.innerHTML = Object.keys(weatherModels).map(model => 
+                `<div class="legend-item">
+                    <div class="legend-color" style="background-color: ${weatherModels[model].color}"></div>
+                    <span>${model}</span>
+                </div>`
+            ).join('');
+        }
+
+        function updateLeadTime() {
+            const variable = document.getElementById('leadtime-variable').value;
+            const varInfo = variables[variable];
+            
+            // Calculate uncertainty metrics by lead time
+            const leadTimes = Array.from({length: 168}, (_, i) => i);
+            const spreadData = leadTimes.map(hour => {
+                // Simulate increasing uncertainty with lead time
+                const baseSpread = varInfo.noise;
+                const growthRate = 0.02;
+                const saturation = varInfo.range * 0.3;
+                return Math.min(baseSpread * (1 + hour * growthRate), saturation);
+            });
+
+            const skillData = leadTimes.map(hour => {
+                // Simulate decreasing skill with lead time
+                return Math.max(0.95 * Math.exp(-hour * 0.01), 0.3);
+            });
+
+            leadTimeChart.data.labels = leadTimes;
+            leadTimeChart.data.datasets = [
+                {
+                    label: 'Forecast Spread',
+                    data: spreadData,
+                    borderColor: '#FF6B6B',
+                    backgroundColor: '#FF6B6B20',
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Forecast Skill',
+                    data: skillData,
+                    borderColor: '#4ECDC4',
+                    backgroundColor: '#4ECDC420',
+                    yAxisID: 'y1'
+                }
+            ];
+
+            leadTimeChart.options.scales.y = {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: { display: true, text: `Spread (${varInfo.unit})` }
+            };
+            leadTimeChart.options.scales.y1 = {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: { display: true, text: 'Skill (0-1)' },
+                grid: { drawOnChartArea: false }
+            };
+
+            leadTimeChart.update();
+        }
+
+        function updateFanChart() {
+            const variable = document.getElementById('fan-variable').value;
+            const ensemble = generateEnsembleData(variable, 72, 100);
+            const varInfo = variables[variable];
+            
+            // Calculate percentiles
+            const percentiles = [10, 25, 50, 75, 90];
+            const fanData = [];
+            
+            for (let hour = 0; hour < 72; hour++) {
+                const values = ensemble.map(member => member[hour]).sort((a, b) => a - b);
+                const hourData = { hour };
+                
+                percentiles.forEach(p => {
+                    const index = Math.floor(values.length * p / 100);
+                    hourData[`p${p}`] = values[index];
+                });
+                
+                fanData.push(hourData);
+            }
+
+            // Clear previous chart
+            d3.select('#fanChart').selectAll('*').remove();
+            
+            const margin = { top: 20, right: 30, bottom: 40, left: 50 };
+            const width = 550 - margin.left - margin.right;
+            const height = 350 - margin.top - margin.bottom;
+
+            const svg = d3.select('#fanChart')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom);
+
+            const g = svg.append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            const xScale = d3.scaleLinear()
+                .domain([0, 71])
+                .range([0, width]);
+
+            const yScale = d3.scaleLinear()
+                .domain(d3.extent(fanData.flatMap(d => [d.p10, d.p90])))
+                .range([height, 0]);
+
+            // Fan areas
+            const areas = [
+                { p1: 'p10', p2: 'p90', opacity: 0.2, color: '#4ECDC4' },
+                { p1: 'p25', p2: 'p75', opacity: 0.4, color: '#4ECDC4' }
+            ];
+
+            const area = d3.area()
+                .x(d => xScale(d.hour))
+                .curve(d3.curveCardinal);
+
+            areas.forEach(areaSpec => {
+                g.append('path')
+                    .datum(fanData)
+                    .attr('fill', areaSpec.color)
+                    .attr('opacity', areaSpec.opacity)
+                    .attr('d', area
+                        .y0(d => yScale(d[areaSpec.p1]))
+                        .y1(d => yScale(d[areaSpec.p2]))
+                    );
+            });
+
+            // Median line
+            const line = d3.line()
+                .x(d => xScale(d.hour))
+                .y(d => yScale(d.p50))
+                .curve(d3.curveCardinal);
+
+            g.append('path')
+                .datum(fanData)
+                .attr('fill', 'none')
+                .attr('stroke', '#2C3E50')
+                .attr('stroke-width', 2)
+                .attr('d', line);
+
+            // Axes
+            g.append('g')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(xScale));
+
+            g.append('g')
+                .call(d3.axisLeft(yScale));
+
+            // Labels
+            g.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', 0 - margin.left)
+                .attr('x', 0 - (height / 2))
+                .attr('dy', '1em')
+                .style('text-anchor', 'middle')
+                .text(`${variable.charAt(0).toUpperCase() + variable.slice(1)} (${varInfo.unit})`);
+
+            g.append('text')
+                .attr('transform', `translate(${width / 2}, ${height + margin.bottom})`)
+                .style('text-anchor', 'middle')
+                .text('Hours from Now');
+        }
+
+        function updateBoxPlot() {
+            const variable = document.getElementById('box-variable').value;
+            const varInfo = variables[variable];
+            
+            // Generate data for different lead times
+            const leadTimes = [6, 12, 24, 48, 72, 120, 168];
+            const boxData = [];
+            
+            leadTimes.forEach(leadTime => {
+                const ensemble = generateEnsembleData(variable, leadTime + 1, 100);
+                const values = ensemble.map(member => member[leadTime]).sort((a, b) => a - b);
+                
+                const q1 = d3.quantile(values, 0.25);
+                const median = d3.quantile(values, 0.5);
+                const q3 = d3.quantile(values, 0.75);
+                const iqr = q3 - q1;
+                const min = Math.max(d3.min(values), q1 - 1.5 * iqr);
+                const max = Math.min(d3.max(values), q3 + 1.5 * iqr);
+                
+                boxData.push({
+                    leadTime,
+                    min, q1, median, q3, max,
+                    outliers: values.filter(v => v < min || v > max)
+                });
+            });
+
+            // Clear previous chart
+            d3.select('#boxPlot').selectAll('*').remove();
+            
+            const margin = { top: 20, right: 30, bottom: 60, left: 60 };
+            const width = 550 - margin.left - margin.right;
+            const height = 350 - margin.top - margin.bottom;
+
+            const svg = d3.select('#boxPlot')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom);
+
+            const g = svg.append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            const xScale = d3.scaleBand()
+                .domain(leadTimes)
+                .range([0, width])
+                .padding(0.3);
+
+            const yScale = d3.scaleLinear()
+                .domain(d3.extent(boxData.flatMap(d => [d.min, d.max])))
+                .range([height, 0]);
+
+            const boxWidth = xScale.bandwidth();
+
+            // Draw boxes
+            boxData.forEach(d => {
+                const x = xScale(d.leadTime);
+                
+                // Box
+                g.append('rect')
+                    .attr('x', x)
+                    .attr('y', yScale(d.q3))
+                    .attr('width', boxWidth)
+                    .attr('height', yScale(d.q1) - yScale(d.q3))
+                    .attr('fill', '#4ECDC4')
+                    .attr('opacity', 0.7)
+                    .attr('stroke', '#2C3E50');
+
+                // Median line
+                g.append('line')
+                    .attr('x1', x)
+                    .attr('x2', x + boxWidth)
+                    .attr('y1', yScale(d.median))
+                    .attr('y2', yScale(d.median))
+                    .attr('stroke', '#2C3E50')
+                    .attr('stroke-width', 2);
+
+                // Whiskers
+                g.append('line')
+                    .attr('x1', x + boxWidth/2)
+                    .attr('x2', x + boxWidth/2)
+                    .attr('y1', yScale(d.min))
+                    .attr('y2', yScale(d.q1))
+                    .attr('stroke', '#2C3E50');
+
+                g.append('line')
+                    .attr('x1', x + boxWidth/2)
+                    .attr('x2', x + boxWidth/2)
+                    .attr('y1', yScale(d.max))
+                    .attr('y2', yScale(d.q3))
+                    .attr('stroke', '#2C3E50');
+
+                // Whisker caps
+                [d.min, d.max].forEach(value => {
+                    g.append('line')
+                        .attr('x1', x + boxWidth*0.25)
+                        .attr('x2', x + boxWidth*0.75)
+                        .attr('y1', yScale(value))
+                        .attr('y2', yScale(value))
+                        .attr('stroke', '#2C3E50');
+                });
+
+                // Outliers
+                d.outliers.forEach(outlier => {
+                    g.append('circle')
+                        .attr('cx', x + boxWidth/2)
+                        .attr('cy', yScale(outlier))
+                        .attr('r', 3)
+                        .attr('fill', '#FF6B6B')
+                        .attr('opacity', 0.7);
+                });
+            });
+
+            // Axes
+            g.append('g')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(xScale));
+
+            g.append('g')
+                .call(d3.axisLeft(yScale));
+
+            // Labels
+            g.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', 0 - margin.left)
+                .attr('x', 0 - (height / 2))
+                .attr('dy', '1em')
+                .style('text-anchor', 'middle')
+                .text(`${variable.charAt(0).toUpperCase() + variable.slice(1)} (${varInfo.unit})`);
+
+            g.append('text')
+                .attr('transform', `translate(${width / 2}, ${height + margin.bottom - 10})`)
+                .style('text-anchor', 'middle')
+                .text('Forecast Lead Time (hours)');
+        }
+
+        function updateMonteCarlo() {
+            const variable = document.getElementById('monte-variable').value;
+            const members = parseInt(document.getElementById('monte-members').value);
+            const ensemble = generateEnsembleData(variable, 72, members);
+            const varInfo = variables[variable];
+            
+            const datasets = ensemble.map((member, i) => ({
+                data: member,
+                borderColor: `hsl(${200 + (i % 50) * 3}, 70%, 50%)`,
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                tension: 0.3,
+                pointRadius: 0
+            }));
+
+            // Add ensemble mean
+            const ensembleMean = [];
+            for (let hour = 0; hour < 72; hour++) {
+                const mean = ensemble.reduce((sum, member) => sum + member[hour], 0) / ensemble.length;
+                ensembleMean.push(mean);
+            }
+
+            datasets.push({
+                label: 'Ensemble Mean',
+                data: ensembleMean,
+                borderColor: '#2C3E50',
+                backgroundColor: 'transparent',
+                borderWidth: 3,
+                tension: 0.4,
+                pointRadius: 0
+            });
+
+            monteCarloChart.data.labels = Array.from({length: 72}, (_, i) => i);
+            monteCarloChart.data.datasets = datasets;
+            monteCarloChart.options.scales.y.title.text = `${variable.charAt(0).toUpperCase() + variable.slice(1)} (${varInfo.unit})`;
+            monteCarloChart.update();
+        }
+
+        function updatePDF() {
+            const variable = document.getElementById('pdf-variable').value;
+            const varInfo = variables[variable];
+            
+            // Generate ensemble data for specific lead times
+            const leadTimes = [6, 24, 72];
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1'];
+            
+            // Clear previous chart
+            d3.select('#pdfChart').selectAll('*').remove();
+            
+            const margin = { top: 20, right: 100, bottom: 40, left: 50 };
+            const width = 550 - margin.left - margin.right;
+            const height = 350 - margin.top - margin.bottom;
+
+            const svg = d3.select('#pdfChart')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom);
+
+            const g = svg.append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            let allValues = [];
+            const pdfs = [];
+
+            leadTimes.forEach((leadTime, i) => {
+                const ensemble = generateEnsembleData(variable, leadTime + 1, 200);
+                const values = ensemble.map(member => member[leadTime]);
+                allValues = allValues.concat(values);
+                
+                // Create histogram
+                const histogram = d3.histogram()
+                    .domain(d3.extent(values))
+                    .thresholds(20);
+                
+                const bins = histogram(values);
+                const totalCount = values.length;
+                
+                // Convert to density
+                const pdf = bins.map(bin => ({
+                    x: (bin.x0 + bin.x1) / 2,
+                    density: bin.length / (totalCount * (bin.x1 - bin.x0))
+                }));
+                
+                pdfs.push({ leadTime, pdf, color: colors[i] });
+            });
+
+            const xScale = d3.scaleLinear()
+                .domain(d3.extent(allValues))
+                .range([0, width]);
+
+            const yScale = d3.scaleLinear()
+                .domain([0, d3.max(pdfs.flatMap(p => p.pdf), d => d.density)])
+                .range([height, 0]);
+
+            const line = d3.line()
+                .x(d => xScale(d.x))
+                .y(d => yScale(d.density))
+                .curve(d3.curveCardinal);
+
+            // Draw PDFs
+            pdfs.forEach(p => {
+                g.append('path')
+                    .datum(p.pdf)
+                    .attr('fill', 'none')
+                    .attr('stroke', p.color)
+                    .attr('stroke-width', 2)
+                    .attr('d', line);
+
+                // Fill area under curve
+                const area = d3.area()
+                    .x(d => xScale(d.x))
+                    .y0(height)
+                    .y1(d => yScale(d.density))
+                    .curve(d3.curveCardinal);
+
+                g.append('path')
+                    .datum(p.pdf)
+                    .attr('fill', p.color)
+                    .attr('opacity', 0.2)
+                    .attr('d', area);
+            });
+
+            // Axes
+            g.append('g')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(xScale));
+
+            g.append('g')
+                .call(d3.axisLeft(yScale));
+
+            // Labels
+            g.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', 0 - margin.left)
+                .attr('x', 0 - (height / 2))
+                .attr('dy', '1em')
+                .style('text-anchor', 'middle')
+                .text('Probability Density');
+
+            g.append('text')
+                .attr('transform', `translate(${width / 2}, ${height + margin.bottom})`)
+                .style('text-anchor', 'middle')
+                .text(`${variable.charAt(0).toUpperCase() + variable.slice(1)} (${varInfo.unit})`);
+
+            // Legend
+            const legend = g.append('g')
+                .attr('transform', `translate(${width + 20}, 20)`);
+
+            pdfs.forEach((p, i) => {
+                const legendItem = legend.append('g')
+                    .attr('transform', `translate(0, ${i * 25})`);
+
+                legendItem.append('line')
+                    .attr('x1', 0)
+                    .attr('x2', 20)
+                    .attr('y1', 0)
+                    .attr('y2', 0)
+                    .attr('stroke', p.color)
+                    .attr('stroke-width', 2);
+
+                legendItem.append('text')
+                    .attr('x', 25)
+                    .attr('y', 0)
+                    .attr('dy', '0.35em')
+                    .style('font-size', '12px')
+                    .text(`${p.leadTime}h forecast`);
+            });
+        }
+
+        function updateAllCharts() {
+            updateEnsemble();
+            updateLeadTime();
+            updateFanChart();
+            updateBoxPlot();
+            updateMonteCarlo();
+            updatePDF();
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', initializeCharts);
+    </script>
+</body>
+</html>
